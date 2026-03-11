@@ -1,95 +1,105 @@
-import customtkinter as ctk
-from tkinter import filedialog, messagebox
+import sys
+import os
+from PyQt6.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QPushButton, QLabel, QFileDialog, QTextEdit, QSplitter
+)
+from PyQt6.QtCore import Qt
 import matplotlib.pyplot as plt
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 import numpy as np
 
 from analyzer import WaveAnalyzer
 
-ctk.set_appearance_mode("System")
-ctk.set_default_color_theme("blue")
-
-class WaveAnalyzerApp(ctk.CTk):
+class WaveAnalyzerApp(QMainWindow):
     def __init__(self):
         super().__init__()
-
-        self.title("Wave File Analyzer")
-        self.geometry("1000x700")
-        self.minsize(800, 600)
-
         self.analyzer = None
-        
-        # Grid layout
-        self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(1, weight=1)
+        self.initUI()
+
+    def initUI(self):
+        self.setWindowTitle("Wave File Analyzer")
+        self.resize(1000, 700)
+        self.setMinimumSize(800, 600)
+
+        # Central widget
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        main_layout = QVBoxLayout(central_widget)
 
         # Header Frame
-        self.header_frame = ctk.CTkFrame(self)
-        self.header_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=10)
+        header_layout = QHBoxLayout()
+        self.open_button = QPushButton("Open .wav File")
+        self.open_button.clicked.connect(self.open_file)
+        self.file_label = QLabel("No file selected")
         
-        self.open_button = ctk.CTkButton(self.header_frame, text="Open .wav File", command=self.open_file)
-        self.open_button.pack(side="left", padx=10, pady=10)
-        
-        self.file_label = ctk.CTkLabel(self.header_frame, text="No file selected")
-        self.file_label.pack(side="left", padx=10, pady=10)
+        header_layout.addWidget(self.open_button)
+        header_layout.addWidget(self.file_label)
+        header_layout.addStretch()
+        main_layout.addLayout(header_layout)
 
-        # Main Content Frame
-        self.main_frame = ctk.CTkFrame(self)
-        self.main_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=(0, 10))
-        self.main_frame.grid_columnconfigure(1, weight=3)
-        self.main_frame.grid_rowconfigure(0, weight=1)
+        # Splitter for Sidebar and Main Content
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        main_layout.addWidget(splitter, 1)
 
-        # Sidebar for metadata
-        self.sidebar_frame = ctk.CTkFrame(self.main_frame, width=250)
-        self.sidebar_frame.grid(row=0, column=0, sticky="ns", padx=10, pady=10)
+        # Sidebar (Metadata)
+        sidebar_widget = QWidget()
+        sidebar_layout = QVBoxLayout(sidebar_widget)
+        sidebar_layout.setContentsMargins(0, 0, 0, 0)
         
-        self.metadata_title = ctk.CTkLabel(self.sidebar_frame, text="Metadata", font=ctk.CTkFont(size=16, weight="bold"))
-        self.metadata_title.pack(pady=10)
+        metadata_title = QLabel("<b>Metadata</b>")
+        self.metadata_textbox = QTextEdit()
+        self.metadata_textbox.setReadOnly(True)
+        self.metadata_textbox.setText("Open a file to see metadata...")
         
-        self.metadata_textbox = ctk.CTkTextbox(self.sidebar_frame, width=230, height=200)
-        self.metadata_textbox.pack(padx=10, pady=10, fill="both", expand=True)
-        self.metadata_textbox.insert("0.0", "Open a file to see metadata...")
-        self.metadata_textbox.configure(state="disabled")
-
+        sidebar_layout.addWidget(metadata_title)
+        sidebar_layout.addWidget(self.metadata_textbox)
+        
         # Plot Area
-        self.plot_frame = ctk.CTkFrame(self.main_frame)
-        self.plot_frame.grid(row=0, column=1, sticky="nsew", padx=(0, 10), pady=10)
+        plot_widget = QWidget()
+        plot_layout = QVBoxLayout(plot_widget)
+        plot_layout.setContentsMargins(0, 0, 0, 0)
         
         self.figure, (self.ax1, self.ax2) = plt.subplots(2, 1, figsize=(6, 8))
         self.figure.tight_layout(pad=3.0)
+        self.canvas = FigureCanvas(self.figure)
         
-        self.canvas = FigureCanvasTkAgg(self.figure, master=self.plot_frame)
-        self.canvas.get_tk_widget().pack(fill="both", expand=True)
+        plot_layout.addWidget(self.canvas)
+
+        # Add to splitter
+        splitter.addWidget(sidebar_widget)
+        splitter.addWidget(plot_widget)
+        splitter.setSizes([250, 750])
 
     def open_file(self):
-        filepath = filedialog.askopenfilename(
-            title="Select a Wave File",
-            filetypes=[("Wave files", "*.wav"), ("All files", "*.*")]
+        filepath, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select a Wave File",
+            "",
+            "Wave files (*.wav);;All files (*.*)"
         )
         if filepath:
-            self.file_label.configure(text=filepath)
+            self.file_label.setText(filepath)
             self.analyze_file(filepath)
 
     def analyze_file(self, filepath):
-        # Update UI to show loading
-        self.file_label.configure(text=f"Loading: {filepath}")
-        self.update_idletasks()
+        self.file_label.setText(f"Loading: {filepath}")
+        QApplication.processEvents() # Force UI update
         
         try:
             self.analyzer = WaveAnalyzer(filepath)
             self.update_metadata()
             self.update_plots()
+            self.file_label.setText(filepath)
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to open or analyze file:\n{e}")
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.critical(self, "Error", f"Failed to open or analyze file:\n{e}")
+            self.file_label.setText("Error loading file")
 
     def update_metadata(self):
         if not self.analyzer:
             return
-            
-        self.metadata_textbox.configure(state="normal")
-        self.metadata_textbox.delete("0.0", "end")
-        self.metadata_textbox.insert("0.0", self.analyzer.get_metadata_string())
-        self.metadata_textbox.configure(state="disabled")
+        self.metadata_textbox.setText(self.analyzer.get_metadata_string())
 
     def update_plots(self):
         if not self.analyzer or self.analyzer.audio_data is None:
@@ -143,6 +153,15 @@ class WaveAnalyzerApp(ctk.CTk):
         self.figure.tight_layout()
         self.canvas.draw()
 
+def main():
+    app = QApplication(sys.argv)
+    
+    # Optional: Set a clean style
+    app.setStyle("Fusion")
+    
+    window = WaveAnalyzerApp()
+    window.show()
+    sys.exit(app.exec())
+
 if __name__ == "__main__":
-    app = WaveAnalyzerApp()
-    app.mainloop()
+    main()
